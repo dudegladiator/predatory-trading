@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.DS_Store
+# The published paper; download it from the link in README.md.
+predatory_trading.pdf
+# LaTeX build files (the PDFs are kept)
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.vrb
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+slides/build.log
