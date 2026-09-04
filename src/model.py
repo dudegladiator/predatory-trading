@@ -61,9 +61,14 @@ class Paths:
     x: np.ndarray      # (I, N + 1) holdings
     price: np.ndarray  # (N + 1,)
     cash: np.ndarray   # (I, N + 1) cumulative -integral a p dt
+    start_price: float  # price at t0
 
     def index(self, t: float) -> int:
         return int(round((t - self.t[0]) / (self.t[1] - self.t[0])))
+
+    def overshoot(self) -> float:
+        """How far the price falls below both its starting and long-run levels."""
+        return max(0.0, min(self.start_price, self.price[-1]) - self.price.min())
 
     def payoff(self, mu: float) -> np.ndarray:
         """Expected final wealth of each trader, objective (11)."""
@@ -79,4 +84,4 @@ def simulate(p: Params, rates: np.ndarray) -> Paths:
     # Price is linear within a step, so its average there is the trapezoid.
     spent = steps * (price[:-1] + price[1:]) / 2
     cash = -np.concatenate([np.zeros((p.I, 1)), np.cumsum(spent, axis=1)], axis=1)
-    return Paths(t=t, x=x, price=price, cash=cash)
+    return Paths(t=t, x=x, price=price, cash=cash, start_price=p.price(p.I * p.x0))
