@@ -75,13 +75,20 @@ class Paths:
         return self.x[:, -1] * mu + self.cash[:, -1]
 
 
-def simulate(p: Params, rates: np.ndarray) -> Paths:
-    """rates[i, k] is trader i's trading intensity on [t_k, t_k + dt)."""
+def simulate(p: Params, rates: np.ndarray, auction: np.ndarray | None = None) -> Paths:
+    """rates[i, k] is trader i's trading intensity on [t_k, t_k + dt).
+
+    auction[i] is an optional block trade at t0 in a batch auction (Section VI.B):
+    all orders execute at the single price that clears the demand curve.
+    """
     t = time_grid(p)
+    start = np.full(p.I, p.x0) if auction is None else np.full(p.I, p.x0) + auction
     steps = rates * p.dt
-    x = p.x0 + np.concatenate([np.zeros((p.I, 1)), np.cumsum(steps, axis=1)], axis=1)
+    x = start[:, None] + np.concatenate([np.zeros((p.I, 1)), np.cumsum(steps, axis=1)], axis=1)
     price = p.price(x.sum(axis=0))
     # Price is linear within a step, so its average there is the trapezoid.
     spent = steps * (price[:-1] + price[1:]) / 2
     cash = -np.concatenate([np.zeros((p.I, 1)), np.cumsum(spent, axis=1)], axis=1)
+    if auction is not None:
+        cash -= (auction * price[0])[:, None]
     return Paths(t=t, x=x, price=price, cash=cash, start_price=p.price(p.I * p.x0))

@@ -4,13 +4,23 @@ import sys
 from pathlib import Path
 
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from closed_form import prop1_rates, prop2_rates  # noqa: E402
+from closed_form import (  # noqa: E402
+    equilibrium_rates,
+    orderly_value,
+    paper_value,
+    prop1_rates,
+    prop2_rates,
+    prop7_x0,
+    prop8_rates,
+    prop9_trades,
+)
 from model import Params, simulate  # noqa: E402
 
 OUT = Path(__file__).parent / "figures"
@@ -73,8 +83,64 @@ def overshoot_vs_predators():
     fig.savefig(OUT / "prop3_overshoot.png", dpi=150)
 
 
+def valuation_vs_predators():
+    """Props. 5-6: total value of the distressed traders' shares (I x0 = 18)."""
+    Is = range(3, 61, 3)
+    distressed = []
+    for I in Is:
+        p = Params(I=I, I_d=I // 3, x0=18 / I, x_bar=20 / I)
+        distressed.append(p.I_d * simulate(p, equilibrium_rates(p)).cash[0, -1])
+    p = Params(x0=6.0)
+    p_t0 = p.price(18)
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.axhline(paper_value(p_t0, 6.0), ls="--", c="gray", label="paper value")
+    ax.axhline(orderly_value(p, p_t0, 6.0), ls=":", c="black", label="orderly liquidation")
+    ax.plot([I * 2 // 3 for I in Is], distressed, "o-", label="distressed liquidation")
+    ax.set(title="Props. 5-6: value of the distressed position",
+           xlabel="number of predators $I_p$", ylabel="value")
+    ax.legend(loc="center right")
+    fig.tight_layout()
+    fig.savefig(OUT / "prop56_valuation.png", dpi=150)
+
+
+def disclosure():
+    """Prop. 7: position built before t0, with and without disclosure (I = 5)."""
+    pis = [i / 100 for i in range(101)]
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(pis, [prop7_x0(5, 10, pi, disclosed=False) for pi in pis], label="not disclosed")
+    ax.plot(pis, [prop7_x0(5, 10, pi, disclosed=True) for pi in pis], "--", label="disclosed")
+    ax.axhline(3 / 4 * 10, ls=":", c="gray", label="predation threshold")
+    ax.set(title="Prop. 7: initial position x(t0), I = 5, x_bar = 10",
+           xlabel="probability of distress pi", ylabel="x(t0)")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(OUT / "prop7_disclosure.png", dpi=150)
+
+
+def market_design():
+    """Props. 2, 8, 9 on the Fig. 3 example with I = 3."""
+    p = Params(I=3, I_d=1, x0=16 / 3, x_bar=20 / 3)
+    auction, rates = prop9_trades(p)
+    cases = [
+        ("front-running (distressed start at 5.5)", simulate(p, prop8_rates(p, 5.5)), "-"),
+        ("normal (Prop. 2)", simulate(p, prop2_rates(p)), "--"),
+        ("batch auction at t0", simulate(p, rates, auction), ":"),
+    ]
+    fig, ax = plt.subplots(figsize=(7, 4))
+    for label, paths, style in cases:
+        ax.plot(paths.t, paths.price, style,
+                label=f"{label}: overshoot {paths.overshoot():.2f}, revenue {paths.cash[0, -1]:.1f}")
+    ax.set(title="Props. 8-9: market design, I = 3", xlabel="time", ylabel="price")
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(OUT / "prop89_market_design.png", dpi=150)
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     fig1_and_2()
     fig3()
     overshoot_vs_predators()
+    valuation_vs_predators()
+    disclosure()
+    market_design()
