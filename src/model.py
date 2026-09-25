@@ -55,6 +55,24 @@ def schedule(p: Params, phases: list[tuple[float, float]]) -> np.ndarray:
     return np.diff(np.interp(time_grid(p), knots, volume)) / p.dt
 
 
+def _buy_cap(others: np.ndarray, A: float) -> np.ndarray:
+    """Eq. (9): solve y + sum_j min(a_j, y) = A per step."""
+    s = np.sort(others, axis=0)
+    m, n = s.shape
+    prefix = np.vstack([np.zeros(n), np.cumsum(s, axis=0)])
+    k = np.arange(m + 1)[:, None]
+    y = (A - prefix) / (m - k + 1)
+    lower = np.vstack([np.full(n, -np.inf), s])
+    upper = np.vstack([s, np.full(n, np.inf)])
+    valid = (y >= lower - 1e-12) & (y <= upper + 1e-12)
+    return y[np.argmax(valid, axis=0), np.arange(n)]
+
+
+def speed_caps(others: np.ndarray, A: float) -> tuple[np.ndarray, np.ndarray]:
+    """Eqs. (9)-(10): fastest sell and buy rates for trader i per step."""
+    return -_buy_cap(-others, A), _buy_cap(others, A)
+
+
 @dataclass
 class Paths:
     t: np.ndarray      # (N + 1,)
