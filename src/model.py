@@ -73,6 +73,20 @@ def speed_caps(others: np.ndarray, A: float) -> tuple[np.ndarray, np.ndarray]:
     return -_buy_cap(-others, A), _buy_cap(others, A)
 
 
+def impact_costs(p: Params, rates: np.ndarray) -> np.ndarray:
+    """Eq. (8): temporary impact cost per trader and step, expressed as a rate."""
+    cost = np.zeros_like(rates)
+    over = np.abs(rates.sum(axis=0)) > p.A + 1e-9
+    if over.any():
+        gamma = p.lam * p.I * p.x_bar
+        for i in range(p.I):
+            lo, hi = speed_caps(np.delete(rates[:, over], i, axis=0), p.A)
+            a = rates[i, over]
+            excess = np.maximum(a - hi, lo - a)
+            cost[i, over] = gamma * np.where(excess > 1e-9, excess, 0.0)
+    return cost
+
+
 @dataclass
 class Paths:
     t: np.ndarray      # (N + 1,)
@@ -106,6 +120,7 @@ def simulate(p: Params, rates: np.ndarray, auction: np.ndarray | None = None) ->
     price = p.price(x.sum(axis=0))
     # Price is linear within a step, so its average there is the trapezoid.
     spent = steps * (price[:-1] + price[1:]) / 2
+    spent += impact_costs(p, rates) * p.dt
     cash = -np.concatenate([np.zeros((p.I, 1)), np.cumsum(spent, axis=1)], axis=1)
     if auction is not None:
         cash -= (auction * price[0])[:, None]

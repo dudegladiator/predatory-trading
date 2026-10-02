@@ -23,6 +23,14 @@ from closed_form import (  # noqa: E402
     prop9_trades,
 )
 from model import Params, simulate  # noqa: E402
+from solver import best_response, deviation_gain, fictitious_play, naive_start  # noqa: E402
+
+PRESETS = {
+    "Prop. 1 example (1 predator)": Params(),
+    "Fig. 3, I = 3 (2 predators)": Params(I=3, I_d=1, x0=16 / 3, x_bar=20 / 3),
+    "Fig. 3, I = 9 (6 predators)": Params(I=9, I_d=3, x0=16 / 9, x_bar=20 / 9),
+}
+LEARNING_ROUNDS = (1, 2, 5, 10, 20, 50, 100, 200, 300)
 def market() -> Params:
     """Market parameters shared by every page, set in the sidebar."""
     with st.sidebar:
@@ -255,6 +263,55 @@ def page_market_design():
                "the demand curve first, but the distressed seller's revenue is not higher: "
                "everything sells at one price.")
 
+def learning(preset: str) -> tuple[dict, dict]:
+    """Price path and deviation gain after each recorded round, from round 0."""
+    p = PRESETS[preset]
+    start = naive_start(p, equilibrium_rates(p)[: p.I_d])
+    history = {0: start, **fictitious_play(p, start, LEARNING_ROUNDS[-1], record=LEARNING_ROUNDS)}
+    prices = {k: simulate(p, r).price for k, r in history.items()}
+    gains = {k: deviation_gain(p, r) for k, r in history.items()}
+    return prices, gains
+
+def page_equilibrium_check():
+    st.title("Checking the equilibrium (Lemma 1 as a linear program)")
+    st.markdown("""
+Hold every other trader at the paper's strategy and ask a computer for one predator's
+**best possible strategy**. By Lemma 1 its payoff is linear in its own trades, so this
+is a linear program with an exact answer. If the paper is right, nothing beats the
+paper's strategy. The parameters here are the paper's own.""")
+    preset = st.selectbox("Example", list(PRESETS))
+    p = PRESETS[preset]
+    rates = equilibrium_rates(p)
+    i = p.I - 1
+    br = best_response(p, rates, i, p.x_bar)
+    paper, best = simulate(p, rates), simulate(p, br)
+    m = st.columns(3)
+    m[0].metric("Paper's strategy pays", f"{paper.payoff(p.mu)[i]:.4f}")
+    m[1].metric("Best possible pays", f"{best.payoff(p.mu)[i]:.4f}")
+    m[2].metric("Gain from deviating", f"{best.payoff(p.mu)[i] - paper.payoff(p.mu)[i]:.6f}")
+    chart(paper.t, {"paper's strategy": paper.x[i], "LP best response": best.x[i]}, "predator's holdings")
+    st.caption("The two can differ after the selling ends (footnote 13: buy-back speed is free) "
+               "but pay the same.")
+
+    st.subheader("Learning the equilibrium from scratch")
+    st.markdown("""
+Start the predators on a **naive** strategy: just buy steadily while the distressed
+trader sells. Each round they move a step 1/(k + 2) toward their best response to each
+other (**fictitious play**). Undamped best responses cycle, because they are all-or-nothing.""")
+    learn = st.selectbox("Example", list(PRESETS)[1:], key="learn")
+    prices, gains = learning(learn)
+    q = PRESETS[learn]
+    k = st.select_slider("Round", options=[0, *LEARNING_ROUNDS], value=0)
+    eq = simulate(q, equilibrium_rates(q))
+    left, right = st.columns(2)
+    with left:
+        chart(eq.t, {f"round {k}": prices[k], "paper (eq. 20)": eq.price}, "price")
+    with right:
+        df = pd.DataFrame({"gain from deviating": gains}).rename_axis("round")
+        st.line_chart(df.iloc[1:], x_label="round", y_label="gain from deviating")
+    st.caption(f"Round {k}: a predator could still gain {gains[k]:.3f} by deviating. "
+               "The gap shrinks toward 0 as the price path converges to the paper's.")
+
 
 PAGES = [
     (page_model, "The model", "model"),
@@ -262,6 +319,7 @@ PAGES = [
     (page_many_predators, "Many predators", "many"),
     (page_valuation, "Valuation & disclosure", "valuation"),
     (page_market_design, "Market design", "market-design"),
+    (page_equilibrium_check, "Equilibrium check", "equilibrium"),
 ]
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ from closed_form import (  # noqa: E402
     prop9_trades,
 )
 from model import Params, simulate  # noqa: E402
+from solver import deviation_gain, fictitious_play, naive_start  # noqa: E402
 
 OUT = Path(__file__).parent / "figures"
 
@@ -136,6 +137,28 @@ def market_design():
     fig.savefig(OUT / "prop89_market_design.png", dpi=150)
 
 
+def fictitious_play_convergence():
+    """Week 6: predators learn the Prop. 2 equilibrium from a naive start (I = 3)."""
+    p = fig3_params(3)
+    start = naive_start(p, equilibrium_rates(p)[: p.I_d])
+    rounds = (1, 2, 5, 10, 20, 50, 100, 200, 300)
+    history = {0: start, **fictitious_play(p, start, rounds[-1], record=rounds)}
+    eq = simulate(p, prop2_rates(p))
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    for k, style in [(0, ":"), (10, "-."), (50, "--"), (300, "-")]:
+        axes[0].plot(eq.t, simulate(p, history[k]).price, style, label=f"round {k}")
+    axes[0].plot(eq.t, eq.price, c="black", lw=2, alpha=0.3, label="paper (eq. 20)")
+    axes[0].set(title="Panel A: price path", xlabel="time", ylabel="price")
+    axes[0].legend()
+    gains = [deviation_gain(p, history[k]) for k in rounds]
+    axes[1].loglog(rounds, gains, "o-")
+    axes[1].set(title="Panel B: gain from deviating", xlabel="round", ylabel="gain")
+    fig.suptitle("Fictitious play converges to the paper's equilibrium (I = 3)")
+    fig.tight_layout()
+    fig.savefig(OUT / "fictitious_play.png", dpi=150)
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     fig1_and_2()
@@ -144,3 +167,4 @@ if __name__ == "__main__":
     valuation_vs_predators()
     disclosure()
     market_design()
+    fictitious_play_convergence()
