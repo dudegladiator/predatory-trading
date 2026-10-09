@@ -51,6 +51,15 @@ def test_equilibrium_check_shows_no_gain_from_deviating():
     at.select_slider[0].set_value(300).run()
     assert not at.exception
 
+def test_collusion_page_shows_cartel_numbers():
+    at = render("page_collusion").run()
+    metrics = {m.label: m.value for m in at.metric}
+    assert metrics["Overshoot"] == "13.33"
+    assert metrics["Distressed traders' revenue"] == "576.0"
+    assert metrics["Gain from cheating on the cartel"] == "16.67"
+
+
+
 def test_bad_inputs_warn_instead_of_crashing():
     at = render("page_single_predator").run()
     at.slider[0].set_value(19.0)              # x_bar

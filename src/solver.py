@@ -33,6 +33,15 @@ def best_response(p: Params, rates: np.ndarray, i: int, target: float) -> np.nda
     return out
 
 
+def collusive_response(p: Params, rates: np.ndarray) -> np.ndarray:
+    """Predators maximise their joint profit against fixed distressed traders."""
+    x = _optimal_holdings(p, rates[: p.I_d], p.x0 * p.I_d,
+                          p.x0 * p.I_p, p.x_bar * p.I_p, p.x_bar * p.I_p)
+    out = rates.copy()
+    out[p.I_d:] = np.diff(x) / p.dt / p.I_p
+    return out
+
+
 def naive_start(p: Params, distressed: np.ndarray) -> np.ndarray:
     """Starting point: predators buy steadily while distressed traders sell."""
     end = p.t0 + p.x0 / (p.A / p.I)

@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from closed_form import (  # noqa: E402
+    collusion_rates,
     equilibrium_rates,
     orderly_value,
     paper_value,
@@ -159,6 +160,37 @@ def fictitious_play_convergence():
     fig.savefig(OUT / "fictitious_play.png", dpi=150)
 
 
+def collusion():
+    """Week 7: cartel vs competing predators, Fig. 3 totals."""
+    fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+    p = fig3_params(3)
+    comp, cart = simulate(p, prop2_rates(p)), simulate(p, collusion_rates(p))
+    axes[0].plot(comp.t, comp.price, "--", label="competing (Prop. 2)")
+    axes[0].plot(cart.t, cart.price, label="cartel")
+    axes[0].set(title="Panel A: price, I = 3", xlabel="time", ylabel="price")
+
+    Is = range(3, 61, 3)
+    rows = []
+    for I in Is:
+        p = fig3_params(I)
+        comp, cart = simulate(p, prop2_rates(p)), simulate(p, collusion_rates(p))
+        rows.append((comp.overshoot(), cart.overshoot(), p.I_d * comp.cash[0, -1], p.I_d * cart.cash[0, -1]))
+    predators = [I * 2 // 3 for I in Is]
+    cols = list(zip(*rows))
+    axes[1].plot(predators, cols[0], "o--", label="competing")
+    axes[1].plot(predators, cols[1], "o-", label="cartel")
+    axes[1].set(title="Panel B: overshoot", xlabel="number of predators $I_p$", ylabel="overshoot")
+    axes[2].plot(predators, cols[2], "o--", label="competing")
+    axes[2].plot(predators, cols[3], "o-", label="cartel")
+    axes[2].set(title="Panel C: distressed traders' total revenue",
+                xlabel="number of predators $I_p$", ylabel="revenue")
+    for ax in axes:
+        ax.legend()
+    fig.suptitle("Extension F: collusion vs competition (I x0 = 16, I x_bar = 20)")
+    fig.tight_layout()
+    fig.savefig(OUT / "collusion.png", dpi=150)
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     fig1_and_2()
@@ -168,3 +200,4 @@ if __name__ == "__main__":
     disclosure()
     market_design()
     fictitious_play_convergence()
+    collusion()

@@ -14,6 +14,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from closed_form import (  # noqa: E402
+    collusion_rates,
     equilibrium_rates,
     orderly_value,
     paper_value,
@@ -313,6 +314,50 @@ other (**fictitious play**). Undamped best responses cycle, because they are all
                "The gap shrinks toward 0 as the price path converges to the paper's.")
 
 
+def page_collusion():
+    st.title("Extension F: collusion vs competition")
+    st.markdown("""
+Competing predators race to rebuild their positions first, which limits predation
+(Prop. 3). A **cartel** maximises the predators' *joint* profit instead: it acts like one
+predator with their combined capacity, selling until the distressed traders are out and
+only then rebuilding. Checked with a joint linear program (week 7).""")
+    p = traders(market(), "col", 3, 1, 16.0, 20.0)
+    comp_rates = attempt(equilibrium_rates, p)
+    cart_rates = attempt(collusion_rates, p)
+    if comp_rates is None or cart_rates is None:
+        return
+    comp, cart = simulate(p, comp_rates), simulate(p, cart_rates)
+
+    m = st.columns(4)
+    m[0].metric("Overshoot", f"{cart.overshoot():.2f}", f"{cart.overshoot() - comp.overshoot():+.2f} vs competing",
+                delta_color="inverse")
+    m[1].metric("Distressed traders' revenue", f"{p.I_d * cart.cash[0, -1]:.1f}",
+                f"{p.I_d * (cart.cash[0, -1] - comp.cash[0, -1]):+.1f}")
+    m[2].metric("Predators' joint payoff", f"{cart.payoff(p.mu)[p.I_d:].sum():.1f}",
+                f"{(cart.payoff(p.mu) - comp.payoff(p.mu))[p.I_d:].sum():+.1f}")
+    if p.I_p >= 2:
+        i = p.I - 1
+        cheat = simulate(p, best_response(p, cart_rates, i, p.x_bar)).payoff(p.mu)[i] - cart.payoff(p.mu)[i]
+        m[3].metric("Gain from cheating on the cartel", f"{cheat:.2f}")
+    chart(comp.t, {"competing": comp.price, "cartel": cart.price}, "price")
+    st.caption("Collusion is a pure transfer: the predators gain exactly what the distressed "
+               "traders lose. But each member gains by cheating (rebuilding early), so the cartel "
+               "is not an equilibrium. The paper notes tacit collusion cannot occur in this model.")
+
+    st.subheader("More predators, same totals")
+    rows = []
+    for k in range(1, 21):
+        q = scaled(p, k)
+        try:
+            c, d = simulate(q, equilibrium_rates(q)), simulate(q, collusion_rates(q))
+        except AssertionError:
+            break
+        rows.append((q.I_p, c.overshoot(), d.overshoot()))
+    df = pd.DataFrame(rows, columns=["predators", "competing", "cartel"]).set_index("predators")
+    st.line_chart(df, x_label="number of predators I_p", y_label="overshoot")
+    st.caption("Competition erodes the overshoot as predators are added; a cartel keeps it "
+               "whatever its size.")
+
 PAGES = [
     (page_model, "The model", "model"),
     (page_single_predator, "Single predator", "single"),
@@ -320,6 +365,7 @@ PAGES = [
     (page_valuation, "Valuation & disclosure", "valuation"),
     (page_market_design, "Market design", "market-design"),
     (page_equilibrium_check, "Equilibrium check", "equilibrium"),
+    (page_collusion, "Collusion", "collusion"),
 ]
 
 if __name__ == "__main__":

@@ -172,6 +172,16 @@ def prop9_price(p: Params, t: np.ndarray) -> np.ndarray:
                     p.mu - p.lam * p.S + p.lam * p.I_p * p.x_bar)
 
 
+def collusion_rates(p: Params) -> np.ndarray:
+    """Week 7: predators collude, acting as one predator with capacity I_p x_bar."""
+    end = liquidation_end(p)
+    rebuild = p.I_p * p.x_bar / p.A
+    _check_assumptions(p, end + rebuild)
+    distressed = schedule(p, [(end, -p.A / p.I)])
+    predator = schedule(p, [(end, -p.A / p.I), (end + rebuild, p.A / p.I_p)])
+    return _stack(p, distressed, predator)
+
+
 def paper_value(price: float, x: float) -> float:
     """Def. 2 (i): mark-to-market value."""
     return x * price
