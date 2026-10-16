@@ -60,6 +60,18 @@ def test_collusion_page_shows_cartel_numbers():
 
 
 
+def test_contagion_page_scenarios():
+    at = render("page_contagion").run()
+    assert at.metric[0].value == "0"
+    at.selectbox[0].set_value("D and E shocked").run()
+    assert at.metric[0].value == "5"
+    at.multiselect[0].set_value(["D"]).run()    # bail out D: only E fails
+    assert at.metric[0].value == "1"
+    at.toggle[0].set_value(False).run()         # sell-or-hold hurdles
+    assert not at.exception
+
+
+
 def test_bad_inputs_warn_instead_of_crashing():
     at = render("page_single_predator").run()
     at.slider[0].set_value(19.0)              # x_bar

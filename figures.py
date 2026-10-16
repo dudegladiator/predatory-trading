@@ -22,7 +22,9 @@ from closed_form import (  # noqa: E402
     prop8_rates,
     prop9_trades,
 )
+from contagion import cascade, hurdles  # noqa: E402
 from model import Params, simulate  # noqa: E402
+from plots import wealth_vs_hurdles  # noqa: E402
 from solver import deviation_gain, fictitious_play, naive_start  # noqa: E402
 
 OUT = Path(__file__).parent / "figures"
@@ -191,6 +193,31 @@ def collusion():
     fig.savefig(OUT / "collusion.png", dpi=150)
 
 
+def contagion():
+    """Week 8 (extension C): Fig. 4 scenarios with computed survival hurdles."""
+    p = Params(I=6, x_bar=6.0, x0=5.0, T=9.0, dt=0.005)
+    D = hurdles(p)
+    W_low = 100.0
+    calm = np.array([115, 140, 155, 200, 200, 200], dtype=float)
+    one, two = calm.copy(), calm.copy()
+    one[3] = 90
+    two[[3, 4]] = 90
+    rescued = two.copy()
+    rescued[3] = 200
+    scenarios = [
+        (calm, "Panel A: no shock"),
+        (one, "Panel B: D shocked"),
+        (two, "Panel C: D and E shocked"),
+        (rescued, "Panel D: D and E shocked, D bailed out"),
+    ]
+    fig, axes = plt.subplots(1, 4, figsize=(18, 4), sharey=True)
+    for ax, (wealth, title) in zip(axes, scenarios):
+        failed = cascade(wealth, W_low, D)[-1]
+        wealth_vs_hurdles(ax, wealth, W_low, D, failed, f"{title}\nfails: {''.join('ABCDEF'[i] for i in failed) or 'none'}")
+    fig.suptitle("Extension C: contagion with computed survival hurdles W(I_d) (red = fails)")
+    fig.tight_layout()
+    fig.savefig(OUT / "contagion.png", dpi=150)
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     fig1_and_2()
@@ -201,3 +228,4 @@ if __name__ == "__main__":
     market_design()
     fictitious_play_convergence()
     collusion()
+    contagion()

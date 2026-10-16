@@ -23,7 +23,9 @@ from closed_form import (  # noqa: E402
     prop8_rates,
     prop9_trades,
 )
+from contagion import cascade, equilibria, hurdles  # noqa: E402
 from model import Params, simulate  # noqa: E402
+from plots import NAMES, wealth_figure  # noqa: E402
 from solver import best_response, deviation_gain, fictitious_play, naive_start  # noqa: E402
 
 PRESETS = {
@@ -32,6 +34,15 @@ PRESETS = {
     "Fig. 3, I = 9 (6 predators)": Params(I=9, I_d=3, x0=16 / 9, x_bar=20 / 9),
 }
 LEARNING_ROUNDS = (1, 2, 5, 10, 20, 50, 100, 200, 300)
+
+CONTAGION = Params(I=6, x_bar=6.0, x0=5.0, T=9.0, dt=0.005)
+W_LOW = 100.0
+CALM = [115.0, 140.0, 155.0, 200.0, 200.0, 200.0]
+SCENARIOS = {
+    "No shock (Fig. 4, Panel A)": CALM,
+    "D shocked (Fig. 4, Panel B)": [115.0, 140.0, 155.0, 90.0, 200.0, 200.0],
+    "D and E shocked": [115.0, 140.0, 155.0, 90.0, 90.0, 200.0],
+}
 def market() -> Params:
     """Market parameters shared by every page, set in the sidebar."""
     with st.sidebar:
@@ -358,6 +369,53 @@ only then rebuilding. Checked with a joint linear program (week 7).""")
     st.caption("Competition erodes the overshoot as predators are added; a cartel keeps it "
                "whatever its size.")
 
+def contagion_hurdles(can_buy: bool) -> np.ndarray:
+    return hurdles(CONTAGION, can_buy)
+
+
+def page_contagion():
+    st.title("Extension C: contagion and bailouts")
+    st.markdown(f"""
+Six traders A–F (Section III.B, Fig. 4). A trader must liquidate if its wealth falls to
+W̲ = {W_LOW:.0f}. **W(I_d)** is the wealth below which a trader cannot avoid distress if the
+market expects I_d traders to fail: the more failures expected, the fiercer the predation
+and the higher the hurdle (Prop. 4). Each hurdle is computed by finding the trader's
+best survival strategy, an optimisation over all strategies (eq. 21).""")
+    c1, c2 = st.columns(2)
+    scenario = c1.selectbox("Scenario", list(SCENARIOS))
+    can_buy = c2.toggle("Survival strategies may buy (eq. 21 literally)", value=True,
+                        help="Off: a trader in trouble may only sell or hold.")
+    D = contagion_hurdles(can_buy)
+    cols = st.columns(6)
+    wealth = np.array([cols[i].slider(NAMES[i], 60.0, 220.0, SCENARIOS[scenario][i], 1.0,
+                                      key=f"w{i}{scenario}") for i in range(6)])
+    rescued = st.multiselect("Central bank bails out (recapitalises above every hurdle)",
+                             list(NAMES[:6]), key=f"bail{scenario}")
+    for name in rescued:
+        wealth[NAMES.index(name)] = max(wealth[NAMES.index(name)], W_LOW + D[-1] + 1)
+
+    steps = cascade(wealth, W_LOW, D)
+    failed = steps[-1]
+    left, right = st.columns([3, 2])
+    with left:
+        st.pyplot(wealth_figure(wealth, W_LOW, D, failed, "Wealth vs survival hurdles (red = fails)"))
+    with right:
+        st.metric("Traders who fail (ripple from the shocked)", len(failed))
+        st.markdown("**Ripple:** " + " → ".join(", ".join(NAMES[i] for i in step) or "none"
+                                               for step in steps))
+        eq = equilibria(wealth, W_LOW, D)
+        st.markdown(f"**All consistent outcomes** (number of failures): {eq}")
+        if len(eq) > 1:
+            st.caption("Several outcomes are self-fulfilling: if the market expects more "
+                       "failures, predation is fiercer and they happen (panic).")
+        st.dataframe(pd.DataFrame({"W(I_d)": W_LOW + D[1:]}, index=pd.Index(range(1, 7), name="I_d")).round(2))
+    if failed:
+        p = replace(CONTAGION, I_d=len(failed))
+        rates = attempt(equilibrium_rates, p) if p.I_d < p.I else None
+        if rates is not None:
+            paths = simulate(p, rates)
+            chart(paths.t, {f"price with {len(failed)} failing": paths.price}, "price")
+
 PAGES = [
     (page_model, "The model", "model"),
     (page_single_predator, "Single predator", "single"),
@@ -366,6 +424,7 @@ PAGES = [
     (page_market_design, "Market design", "market-design"),
     (page_equilibrium_check, "Equilibrium check", "equilibrium"),
     (page_collusion, "Collusion", "collusion"),
+    (page_contagion, "Contagion", "contagion"),
 ]
 
 if __name__ == "__main__":
