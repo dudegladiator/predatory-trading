@@ -27,6 +27,7 @@ from contagion import cascade, equilibria, hurdles  # noqa: E402
 from model import Params, simulate  # noqa: E402
 from plots import NAMES, wealth_figure  # noqa: E402
 from solver import best_response, deviation_gain, fictitious_play, naive_start  # noqa: E402
+from unequal import footnote15_rates, predicted_overshoot  # noqa: E402
 
 PRESETS = {
     "Prop. 1 example (1 predator)": Params(),
@@ -43,6 +44,8 @@ SCENARIOS = {
     "D shocked (Fig. 4, Panel B)": [115.0, 140.0, 155.0, 90.0, 200.0, 200.0],
     "D and E shocked": [115.0, 140.0, 155.0, 90.0, 90.0, 200.0],
 }
+
+
 def market() -> Params:
     """Market parameters shared by every page, set in the sidebar."""
     with st.sidebar:
@@ -275,6 +278,8 @@ def page_market_design():
                "the demand curve first, but the distressed seller's revenue is not higher: "
                "everything sells at one price.")
 
+
+@st.cache_data(show_spinner="Running fictitious play…")
 def learning(preset: str) -> tuple[dict, dict]:
     """Price path and deviation gain after each recorded round, from round 0."""
     p = PRESETS[preset]
@@ -283,6 +288,7 @@ def learning(preset: str) -> tuple[dict, dict]:
     prices = {k: simulate(p, r).price for k, r in history.items()}
     gains = {k: deviation_gain(p, r) for k, r in history.items()}
     return prices, gains
+
 
 def page_equilibrium_check():
     st.title("Checking the equilibrium (Lemma 1 as a linear program)")
@@ -369,6 +375,8 @@ only then rebuilding. Checked with a joint linear program (week 7).""")
     st.caption("Competition erodes the overshoot as predators are added; a cartel keeps it "
                "whatever its size.")
 
+
+@st.cache_data(show_spinner="Computing survival hurdles…")
 def contagion_hurdles(can_buy: bool) -> np.ndarray:
     return hurdles(CONTAGION, can_buy)
 
@@ -416,6 +424,45 @@ best survival strategy, an optimisation over all strategies (eq. 21).""")
             paths = simulate(p, rates)
             chart(paths.t, {f"price with {len(failed)} failing": paths.price}, "price")
 
+
+def page_unequal():
+    st.title("Stretch A: predators with unequal positions (footnote 15)")
+    st.markdown("""
+The paper describes this case only in a footnote, in words, and claims that more
+dispersed predator positions mean more overshooting. We build the footnote's
+strategies and the LP solver confirms they are an equilibrium (week 9). It turns out
+only the **smallest** predator matters: it has the most of everyone else's selling still
+ahead of it, so all predators keep selling until its X₋ᵢ reaches its final level.""")
+    p = traders(market(), "uneq", 3, 1, 16.0, 20.0)
+    if p.I_p < 2:
+        st.warning("Needs at least two predators.")
+        return
+    room = float(min(p.x_bar - p.x0, p.x0))
+    if room > 0:
+        delta = st.slider("Spread δ: predators evenly from x0 − δ to x0 + δ", 0.0, room,
+                          min(1.0, room), room / 50)
+    else:  # a slider needs min < max
+        delta = 0.0
+        st.caption("Predators already hold x̄, so there is no room to spread their positions.")
+    offsets = np.linspace(-delta, delta, p.I_p)
+    q = replace(p, holdings=tuple([p.x0] * p.I_d + list(p.x0 + offsets)))
+    equal_rates = attempt(equilibrium_rates, p)
+    rates = attempt(footnote15_rates, q)
+    if equal_rates is None or rates is None:
+        return
+    equal, paths = simulate(p, equal_rates), simulate(q, rates)
+    m = st.columns(3)
+    m[0].metric("Overshoot, equal positions", f"{equal.overshoot():.3f}")
+    m[1].metric("Overshoot, spread", f"{paths.overshoot():.3f}")
+    m[2].metric("Formula λ[A(s − t0) − (X0 − I_p x̄)]", f"{predicted_overshoot(q):.3f}")
+    left, right = st.columns(2)
+    with left:
+        chart(paths.t, {"equal": equal.price, "spread": paths.price}, "price")
+    with right:
+        chart(paths.t, {f"predator at {q.start()[i]:.2f}": paths.x[i] for i in range(p.I_d, p.I)},
+              "holdings")
+
+
 PAGES = [
     (page_model, "The model", "model"),
     (page_single_predator, "Single predator", "single"),
@@ -425,8 +472,9 @@ PAGES = [
     (page_equilibrium_check, "Equilibrium check", "equilibrium"),
     (page_collusion, "Collusion", "collusion"),
     (page_contagion, "Contagion", "contagion"),
+    (page_unequal, "Unequal positions", "unequal"),
 ]
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # Streamlit runs this file as __main__; tests import it
     st.navigation([st.Page(fn, title=title, url_path=path, default=fn is page_model)
                    for fn, title, path in PAGES]).run()

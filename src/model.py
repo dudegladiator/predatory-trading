@@ -4,6 +4,11 @@ Trading rates are piecewise constant on a grid t0, t0 + dt, ..., T. The price is
 linear in holdings and holdings are linear within a step, so the cash computed
 here equals the paper's integral of a(t) p(t) dt exactly when strategy switch
 times fall on the grid (and is off by O(dt^2) per switch otherwise).
+
+Trading faster than the equal-priority speed caps (eqs. 9-10) costs the
+temporary impact cost G of eq. (8), charged at gamma = lam * I * x_bar per
+excess share, the smallest gamma the paper allows. The paper's equilibria
+never pay it; off-equilibrium strategies (e.g. during learning) can.
 """
 
 from dataclasses import dataclass
@@ -24,10 +29,16 @@ class Params:
     t0: float = 5.0
     T: float = 7.0
     dt: float = 0.001
+    # Per-trader holdings at t0, overriding x0 (week 9, unequal positions).
+    holdings: tuple[float, ...] | None = None
 
     @property
     def I_p(self) -> int:
         return self.I - self.I_d
+
+    def start(self) -> np.ndarray:
+        """Each trader's holdings at t0."""
+        return np.full(self.I, self.x0) if self.holdings is None else np.array(self.holdings)
 
     def price(self, X):
         """Eq. (6): p = mu - lam (S - X), X = total strategic holdings."""
@@ -56,7 +67,12 @@ def schedule(p: Params, phases: list[tuple[float, float]]) -> np.ndarray:
 
 
 def _buy_cap(others: np.ndarray, A: float) -> np.ndarray:
-    """Eq. (9): solve y + sum_j min(a_j, y) = A per step."""
+    """Eq. (9): solve y + Σ_j min(a_j, y) = A per step. others is (m, N).
+
+    If exactly k of the others trade below y, the left side is
+    (m - k + 1) y + (sum of those k rates); try every k and keep the one
+    whose y lands between the k-th and (k+1)-th smallest rate.
+    """
     s = np.sort(others, axis=0)
     m, n = s.shape
     prefix = np.vstack([np.zeros(n), np.cumsum(s, axis=0)])
@@ -69,12 +85,22 @@ def _buy_cap(others: np.ndarray, A: float) -> np.ndarray:
 
 
 def speed_caps(others: np.ndarray, A: float) -> tuple[np.ndarray, np.ndarray]:
-    """Eqs. (9)-(10): fastest sell and buy rates for trader i per step."""
+    """Eqs. (9)-(10): fastest sell and buy rates for trader i per step without
+    temporary impact cost, given the other traders' rates (m, N).
+
+    The paper prints eq. (10) as "= A"; it must be "= -A" to match eq. (7)
+    and Prop. 1, so the sell cap is the mirror image of the buy cap.
+    """
     return -_buy_cap(-others, A), _buy_cap(others, A)
 
 
 def impact_costs(p: Params, rates: np.ndarray) -> np.ndarray:
-    """Eq. (8): temporary impact cost per trader and step, expressed as a rate."""
+    """Eq. (8): G per trader per step, as a rate (multiply by dt for cash).
+
+    If |Σ a| <= A, nobody exceeds their cap: a_i > ā_i would give
+    a_i + Σ_j a_j >= a_i + Σ_j min(a_j, a_i) > A. So caps are only computed at
+    steps where the market as a whole trades too fast.
+    """
     cost = np.zeros_like(rates)
     over = np.abs(rates.sum(axis=0)) > p.A + 1e-9
     if over.any():
@@ -83,7 +109,7 @@ def impact_costs(p: Params, rates: np.ndarray) -> np.ndarray:
             lo, hi = speed_caps(np.delete(rates[:, over], i, axis=0), p.A)
             a = rates[i, over]
             excess = np.maximum(a - hi, lo - a)
-            cost[i, over] = gamma * np.where(excess > 1e-9, excess, 0.0)
+            cost[i, over] = gamma * np.where(excess > 1e-9, excess, 0.0)  # ignore rounding
     return cost
 
 
@@ -92,8 +118,8 @@ class Paths:
     t: np.ndarray      # (N + 1,)
     x: np.ndarray      # (I, N + 1) holdings
     price: np.ndarray  # (N + 1,)
-    cash: np.ndarray   # (I, N + 1) cumulative -integral a p dt
-    start_price: float  # price at t0
+    cash: np.ndarray   # (I, N + 1) cumulative -∫ (a p + G) dt
+    start_price: float  # price at t0 before any batch auction
 
     def index(self, t: float) -> int:
         return int(round((t - self.t[0]) / (self.t[1] - self.t[0])))
@@ -114,7 +140,7 @@ def simulate(p: Params, rates: np.ndarray, auction: np.ndarray | None = None) ->
     all orders execute at the single price that clears the demand curve.
     """
     t = time_grid(p)
-    start = np.full(p.I, p.x0) if auction is None else np.full(p.I, p.x0) + auction
+    start = p.start() if auction is None else p.start() + auction
     steps = rates * p.dt
     x = start[:, None] + np.concatenate([np.zeros((p.I, 1)), np.cumsum(steps, axis=1)], axis=1)
     price = p.price(x.sum(axis=0))
@@ -124,4 +150,4 @@ def simulate(p: Params, rates: np.ndarray, auction: np.ndarray | None = None) ->
     cash = -np.concatenate([np.zeros((p.I, 1)), np.cumsum(spent, axis=1)], axis=1)
     if auction is not None:
         cash -= (auction * price[0])[:, None]
-    return Paths(t=t, x=x, price=price, cash=cash, start_price=p.price(p.I * p.x0))
+    return Paths(t=t, x=x, price=price, cash=cash, start_price=p.price(p.start().sum()))

@@ -16,3 +16,5 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
+# Raised inside Streamlit's own chart code, not ours.
+filterwarnings = ["ignore:The inplace keyword in DataFrame.reset_index is deprecated"]

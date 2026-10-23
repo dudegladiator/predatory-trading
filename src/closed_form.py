@@ -15,7 +15,12 @@ def liquidation_end(p: Params) -> float:
 
 
 def _check_assumptions(p: Params, finish: float) -> None:
-    """The paper's standing assumptions behind the equilibrium."""
+    """The paper's standing assumptions behind every equilibrium below.
+
+    Section III assumes t0 + 2 x_bar I / A < T, which is sufficient; what the
+    strategies need is to finish trading (at `finish`) by T.
+    """
+    assert p.holdings is None, "closed forms assume equal holdings x0 (Section III)"
     assert p.x_bar * p.I < p.S, "limited capital: I x_bar < S (Section I)"
     assert finish <= p.T + 1e-12, "not enough time to trade before T"
 
@@ -100,6 +105,8 @@ def prop2_prime_rates(p: Params) -> np.ndarray:
     _check_assumptions(p, end)
     tau = (((p.I_p - 1) * p.x_bar - (p.I - 1) * p.x0)
            / (p.A * (1 - (p.I + p.I_d) / (p.I_p * p.I))))
+    # The proposition implicitly assumes the fast-buying phase ends before the
+    # distressed traders are out; it is not stated for the other case.
     assert p.t0 + tau <= end
     distressed = schedule(p, [(end, -p.A / p.I)])
     predator = schedule(p, [(p.t0 + tau, p.A * (p.I + p.I_d) / (p.I_p * p.I)),
@@ -128,11 +135,16 @@ def prop8_tau(p: Params) -> float:
 
 
 def prop8_rates(p: Params, t1: float) -> np.ndarray:
-    """Prop. 8, eq. (24): distressed traders only start selling at t1 > t0."""
+    """Prop. 8, eq. (24): distressed traders only start selling at t1 > t0.
+
+    Predators first sell at A/I_p (the whole speed limit) for tau, wait, then buy
+    at A I_d / (I (I_p - 1)) from t1 while the distressed traders sell.
+    """
     assert p.I_p >= 2 and preys(p)
     tau = prop8_tau(p)
     end = t1 + p.x0 / (p.A / p.I)
     assert p.t0 + tau <= t1, "front-running must end before the distressed start selling"
+    # Not stated in Prop. 8: front-running must not short past the limit (2).
     assert p.x0 - p.A * tau / p.I_p >= -p.x_bar - 1e-12, "front-running breaks the position limit"
     _check_assumptions(p, end)
     distressed = schedule(p, [(t1, 0.0), (end, -p.A / p.I)])
@@ -155,7 +167,11 @@ def prop8_price(p: Params, t1: float, t: np.ndarray) -> np.ndarray:
 
 
 def prop9_trades(p: Params) -> tuple[np.ndarray, np.ndarray]:
-    """Prop. 9: batch auction at t0. Returns (auction block trades, rates after)."""
+    """Prop. 9: batch auction at t0. Returns (auction block trades, rates after).
+
+    Distressed traders sell everything in the auction; each predator buys
+    (I_p - 1)/I_p (x_bar - x0) there, then buys the rest at A/I_p.
+    """
     assert preys(p)
     _check_assumptions(p, p.t0 + (p.x_bar - p.x0) / p.A)
     auction = np.concatenate([np.full(p.I_d, -p.x0),
@@ -173,7 +189,13 @@ def prop9_price(p: Params, t: np.ndarray) -> np.ndarray:
 
 
 def collusion_rates(p: Params) -> np.ndarray:
-    """Week 7: predators collude, acting as one predator with capacity I_p x_bar."""
+    """Week 7 (extension F): predators collude, acting as one predator with
+    capacity I_p x_bar (Section III.A, "Collusion").
+
+    Each predator sells at A/I with the distressed traders until they are
+    out, then all rebuild together at A/I_p each, using the whole speed limit.
+    With one predator this is Prop. 1.
+    """
     end = liquidation_end(p)
     rebuild = p.I_p * p.x_bar / p.A
     _check_assumptions(p, end + rebuild)

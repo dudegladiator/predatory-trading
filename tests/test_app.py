@@ -51,13 +51,13 @@ def test_equilibrium_check_shows_no_gain_from_deviating():
     at.select_slider[0].set_value(300).run()
     assert not at.exception
 
+
 def test_collusion_page_shows_cartel_numbers():
     at = render("page_collusion").run()
     metrics = {m.label: m.value for m in at.metric}
     assert metrics["Overshoot"] == "13.33"
     assert metrics["Distressed traders' revenue"] == "576.0"
     assert metrics["Gain from cheating on the cartel"] == "16.67"
-
 
 
 def test_contagion_page_scenarios():
@@ -70,6 +70,28 @@ def test_contagion_page_scenarios():
     at.toggle[0].set_value(False).run()         # sell-or-hold hurdles
     assert not at.exception
 
+
+def test_unequal_page_matches_formula():
+    at = render("page_unequal").run()
+    metrics = {m.label: m.value for m in at.metric}
+    assert metrics["Overshoot, equal positions"] == "3.333"
+    assert metrics["Overshoot, spread"] == metrics["Formula λ[A(s − t0) − (X0 − I_p x̄)]"] == "4.833"
+
+
+def test_unequal_page_with_no_room_to_spread():
+    # Found by fuzzing: with x0 = x_bar the spread slider had min = max = 0.
+    at = render("page_unequal").run()
+    at.slider[2].set_value(10.5)        # total holding I x0
+    at.slider[3].set_value(10.5).run()  # total capacity I x_bar, equal to the holding
+    assert not at.exception
+    assert any("no room" in c.value for c in at.caption)
+
+
+def test_two_traders_has_no_distressed_slider():
+    # Found by fuzzing: with I = 2 the I_d slider had min = max and crashed.
+    at = render("page_valuation").run()
+    at.slider[0].set_value(2).run()
+    assert not at.exception
 
 
 def test_bad_inputs_warn_instead_of_crashing():
