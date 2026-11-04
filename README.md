@@ -3,6 +3,11 @@
 A discrete-time implementation of Brunnermeier & Pedersen (2005), "Predatory Trading", *Journal of Finance* 60(4), with an independent numerical check of its equilibria and three extensions. The paper is available from the authors at https://w4.stern.nyu.edu/facdir/lpederse/papers/predatory_trading.pdf; save it as `predatory_trading.pdf` in the project root to follow the equation and page references.
 
 ## Run it
+
+Demo - https://predatory-trading.streamlit.app/
+This can take time, as this is deployed on 3rd party service; kindly wake up the app and wait for 5 minutes. Thanks
+
+
 Requires [uv](https://docs.astral.sh/uv/). It installs Python 3.13 and the dependencies on first use.
 
 ```
